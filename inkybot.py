@@ -35,6 +35,9 @@ class Inkybot:
     
     inky = Inky()
 
+    state = None
+    states = {}
+
     def __init__(self):
         self.font = ImageFont.truetype("fonts/3270NerdFontMono-Regular.ttf", size=self.font_size)
         GPIO.setmode(GPIO.BCM)
@@ -43,24 +46,8 @@ class Inkybot:
         for pin in self.BUTTONS:
             GPIO.add_event_detect(pin, GPIO.FALLING, self.handle_button, bouncetime=250)
 
-
     def color_similarity(self, color1, color2):
         return np.sqrt(np.sum((np.array(color1) - np.array(color2)) ** 2))
-
-#    def quantize_image(self, image, reference_palette, similarity_threshold):
-#        pixels = image.getdata()
-#        new_image = Image.new(image.mode, image.size)
-#
-#        # Quantize the image colors only if they're within the similarity range to the reference palette
-#        for i, pixel in enumerate(pixels):
-#            best_match = min(reference_palette, key=lambda ref_color: color_similarity(ref_color, pixel))
-#            if color_similarity(best_match, pixel) <= similarity_threshold:
-#                new_image.putpixel((i % image.width, i // image.width), best_match)
-#            else:
-#                new_image.putpixel((i % image.width, i // image.width), pixel)
-#
-#        return new_image
-
 
     def least_similar_color(self, color, palette):
         return max(self.palette, key=lambda ref_color: self.color_similarity(ref_color, color))
@@ -100,9 +87,6 @@ class Inkybot:
         # Calculate the aspect ratios
         original_aspect_ratio = original_width / original_height
         target_aspect_ratio = target_width / target_height
-      
-        #print(image.size, resolution)
-        #print(original_aspect_ratio, target_aspect_ratio)
 
         # Calculate resizing factors
         if original_aspect_ratio < target_aspect_ratio:
@@ -124,7 +108,6 @@ class Inkybot:
         else:
             x = min(x_max, x_max // 2 + self.font_size)
         letterbox_image = Image.new(image.mode, (target_width, target_height), letterbox_color)
-        #letterbox_image.paste(resized_image, ((target_width - new_width) // 2, (target_height - new_height) // 2))
         letterbox_image.paste(resized_image, (x, (target_height - new_height) // 2))
         
         return letterbox_image
@@ -132,89 +115,145 @@ class Inkybot:
 
     def handle_button(self,pin):
         label = self.LABELS[self.BUTTONS.index(pin)]
-        print(f"Button pressed: {pin} {label}")
-        if pin == 24:
-            self.skip_img = True
-            print("skipping!")
 
-    def go(self):
+        if label == 'A':
+            self.state.button_a()
+        elif label == 'B':
+            self.state.button_b()
+        elif label == 'C':
+            self.state.button_c()
+        elif label == 'D':
+            self.state.button_d()
+        else:
+            raise Exception("Unhandled button press!")
 
-        text = "test"
-        text_objects = [
-            {
-                "text": "󰸋",
-                #"text": "󰧸",
-                "left": 10,
-                "top": 49
-            },
-            {
-                "text": "",
-                #"text": "󰧸",
-                "left": 10,
-                "top": 161
-            },
-            {
-                "text": "",
-                #"text": "󰧸",
-                "left": 10,
-                "top": 273
-            },
-            {
-                #"text": "󰧸",
-                "text": "󱧾",
-                "left": 10,
-                "top": 385
-            }
+    class StateClass:
+        button_text = [ "?","?","?","?" ]
+        button_positions = [
+            (10,49),
+            (10,161),
+            (10,273),
+            (10,385)
         ]
-        imagelist = []
+        font_size = 60
+        saturation = 0.7
+
+        def __init__(self, parent):
+            self.parent = parent
+
+        # enter and exit functions can be overridden by the child class
+
+        def enter(self):
+            pass
+        def exit(self):
+            pass
+
+        def change_state(self, state):
+            self.parent.change_state(state)
+
+        # button_x functions should be overridden by the child class too
+        def button_a(self):
+            print("Button A")
+        def button_b(self):
+            print("Button B")
+        def button_c(self):
+            print("Button C")
+        def button_d(self):
+            print("Button D")
+
+        def set_image(self, image):
+            draw = ImageDraw.Draw(image)
+            c = self.parent.least_similar_color(self.parent.average_outer_perimeter_color(image), self.parent.palette)
+            c2 = self.parent.least_similar_color(c, self.parent.palette) # hahahahaha what am i thinking
+
+            for i in range(4):
+                txt = self.button_text[i]
+                x,y = self.button_positions[i]
+                text_width, text_height = draw.textsize(txt, font=self.parent.font)
+                dy = int(text_height / 2)
+                for xx in range(x - 1, x + 2, 1):
+                    for yy in range(y - 1 - dy, x + 2 - dy, 1):
+                        draw.text((xx,yy), txt, fill=c, font=self.parent.font)
+
+                draw.text((x,y - dy), txt, fill=c2, font=self.parent.font)
+
+            self.parent.inky.set_image(image, saturation=self.saturation)
+            self.parent.inky.show()
+
+    def State(self, name):
+        def decorator(c):
+            self.states[name] = c(parent = self)
+            return c
+        return decorator
+
+    def change_state(self, state):
+        if self.state:
+            self.state.exit()
+        self.state = self.states[state]
+        self.state.enter()
+
+    def start(self, state):
+        self.state = self.states[state]
+        self.state.enter()
 
         while self.exiting is not True:
-            self.skip_img = False
-            target = time.time() + 60.0
-            
-            if len(imagelist) == 0:
-                imagelist = os.listdir(self.picpath)
-                random.shuffle(imagelist)
+            self.state.loop()
+            time.sleep(0.1)
 
-            fn = imagelist.pop()
+
+
+inkybot = Inkybot()
+
+@inkybot.State('picture')
+class PictureMode(inkybot.StateClass):
+    button_text = [
+        "󰸋",
+        "",
+        "",
+        "󱧾"
+    ]
+    font_size = 60
+    picpath = '/srv/inkybot/pictures'
+    saturation = 0.7
+    pic_time = 60.0
+
+    def enter(self):
+        self.imagelist = []
+        self.next_img = True
+        self.time_target = 0.0
+
+    def button_d(self):
+        print("changing image...")
+        self.next_img = True
+
+    def loop(self):
+
+        if self.time_target <= time.time():
+            self.next_img = True
+
+        if self.next_img:
+            self.next_img = False
+            self.time_target = time.time() + self.pic_time
+        
+            if len(self.imagelist) == 0:
+                self.imagelist = os.listdir(self.picpath)
+                random.shuffle(self.imagelist)
+
+            fn = self.imagelist.pop()
             print(f"Displaying {fn}")
 
             image = Image.open(f"{self.picpath}/{fn}") # XXX FIXME: os join function instead
 
-            resizedimage = self.resize_with_letterbox(
+            resizedimage = self.parent.resize_with_letterbox(
                     image,
-                    self.inky.resolution,
-                    self.average_outer_perimeter_color(image)
+                    self.parent.inky.resolution,
+                    self.parent.average_outer_perimeter_color(image)
                     )
 
-            draw = ImageDraw.Draw(resizedimage)
-            c = self.least_similar_color(self.average_outer_perimeter_color(image), self.palette)
-            c2 = self.least_similar_color(c, self.palette) # hahahahaha what am i thinking
+            self.set_image(resizedimage)
 
-            for t in text_objects:
-                text_width, text_height = draw.textsize(t["text"], font=self.font)
-                dy = int(text_height / 2)
-                for x in range(t["left"] - 1, t["left"] + 2, 1):
-                    for y in range(t["top"] - 1 - dy, t["top"] + 2 - dy, 1):
-                        draw.text((x,y), t["text"], fill=c, font=self.font)
-
-                draw.text((t["left"],t["top"] - dy), t["text"], fill=c2, font=self.font)
-
-            self.inky.set_image(resizedimage, saturation=self.saturation)
-            self.inky.show()
-
-            while time.time() < target and self.skip_img is False:
-                time.sleep(0.1)
 
 if __name__ == "__main__":
-    inkybot = Inkybot()
-    inkybot.go()
+    inkybot.start('picture')
 
-#inky = auto(ask_user=True, verbose=True)
-
-# buttons:
-# - hostap vs wpa_supplicant
-# - next image
-# - ??? mode picture vs. status?
-# - ??? music play/pause/skip?
 
