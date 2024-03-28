@@ -163,8 +163,14 @@ class Inkybot:
 
         def set_image(self, image):
             draw = ImageDraw.Draw(image)
-            c = self.parent.least_similar_color(self.parent.average_outer_perimeter_color(image), self.parent.palette)
-            c2 = self.parent.least_similar_color(c, self.parent.palette) # hahahahaha what am i thinking
+
+            # text colors use the nearest undithered color to what's in the letterbox
+            color_border = self.parent.least_similar_color(
+                    self.parent.average_outer_perimeter_color(image),
+                    self.parent.palette)
+            color = self.parent.least_similar_color(
+                    color_border,
+                    self.parent.palette)
 
             for i in range(4):
                 txt = self.button_text[i]
@@ -172,10 +178,10 @@ class Inkybot:
                 text_width, text_height = draw.textsize(txt, font=self.parent.font)
                 dy = int(text_height / 2)
                 for xx in range(x - 1, x + 2, 1):
-                    for yy in range(y - 1 - dy, x + 2 - dy, 1):
-                        draw.text((xx,yy), txt, fill=c, font=self.parent.font)
+                    for yy in range(y - 1 - dy, y + 2 - dy, 1):
+                        draw.text((xx,yy), txt, fill=color_border, font=self.parent.font)
 
-                draw.text((x,y - dy), txt, fill=c2, font=self.parent.font)
+                draw.text((x,y - dy), txt, fill=color, font=self.parent.font)
 
             self.parent.inky.set_image(image, saturation=self.saturation)
             self.parent.inky.show()
@@ -225,6 +231,7 @@ class PictureMode(inkybot.StateClass):
     def button_d(self):
         print("changing image...")
         self.next_img = True
+        self.time_target = time.time() + self.pic_time
 
     def loop(self):
 
