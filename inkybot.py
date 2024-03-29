@@ -23,19 +23,12 @@ class Inkybot:
     ]
 
     font_size = 60
-    picpath = '/srv/inkybot/pictures'
-    saturation = 0.7
 
-    exiting = False
-    skip_img = False
+    BUTTONS        = [5,6,16,24]
+    BUTTON_LABELS  = ['A', 'B', 'C', 'D']
 
-
-    BUTTONS = [5,6,16,24]
-    LABELS  = ['A', 'B', 'C', 'D']
-    
-    inky = Inky()
-
-    state = None
+    inky   = Inky()
+    state  = None
     states = {}
 
     def __init__(self):
@@ -49,13 +42,13 @@ class Inkybot:
     def color_similarity(self, color1, color2):
         return np.sqrt(np.sum((np.array(color1) - np.array(color2)) ** 2))
 
-    def least_similar_color(self, color, palette):
+    def least_similar_color(self, color):
         return max(self.palette, key=lambda ref_color: self.color_similarity(ref_color, color))
 
     def average_outer_perimeter_color(self,image):
         # Get image dimensions
         width, height = image.size
-        
+
         # Extract the outer 1-pixel perimeter
         outer_perimeter_pixels = []
         for x in range(width):
@@ -67,40 +60,40 @@ class Inkybot:
 
         # Calculate average color
         total_pixels = len(outer_perimeter_pixels)
-        total_red = sum(pixel[0] for pixel in outer_perimeter_pixels)
-        total_green = sum(pixel[1] for pixel in outer_perimeter_pixels)
-        total_blue = sum(pixel[2] for pixel in outer_perimeter_pixels)
+        total_red    = sum(pixel[0] for pixel in outer_perimeter_pixels)
+        total_green  = sum(pixel[1] for pixel in outer_perimeter_pixels)
+        total_blue   = sum(pixel[2] for pixel in outer_perimeter_pixels)
 
-        average_red = total_red // total_pixels
+        average_red   = total_red // total_pixels
         average_green = total_green // total_pixels
-        average_blue = total_blue // total_pixels
+        average_blue  = total_blue // total_pixels
 
         return (average_red, average_green, average_blue)
 
     def resize_with_letterbox(self, image, resolution, letterbox_color=(0, 0, 0)):
-        target_width = resolution[0]
+        target_width  = resolution[0]
         target_height = resolution[1]
-        
+
         # Get original width and height
         original_width, original_height = image.size
-        
+
         # Calculate the aspect ratios
         original_aspect_ratio = original_width / original_height
-        target_aspect_ratio = target_width / target_height
+        target_aspect_ratio   = target_width   / target_height
 
         # Calculate resizing factors
         if original_aspect_ratio < target_aspect_ratio:
             # Image is narrower than target, resize based on height
-            new_width = int(target_height * original_aspect_ratio)
+            new_width  = int(target_height * original_aspect_ratio)
             new_height = target_height
         else:
             # Image is taller than target, resize based on width
-            new_width = target_width
+            new_width  = target_width
             new_height = int(target_width / original_aspect_ratio)
-        
+
         # Resize the image
         resized_image = image.resize((new_width, new_height), Image.ANTIALIAS)
-        
+
         # Create a new image with letterbox bars
         x_max = target_width - new_width
         if x_max // 2 > self.font_size:
@@ -109,12 +102,12 @@ class Inkybot:
             x = min(x_max, x_max // 2 + self.font_size)
         letterbox_image = Image.new(image.mode, (target_width, target_height), letterbox_color)
         letterbox_image.paste(resized_image, (x, (target_height - new_height) // 2))
-        
+
         return letterbox_image
 
 
     def handle_button(self,pin):
-        label = self.LABELS[self.BUTTONS.index(pin)]
+        label = self.BUTTON_LABELS[self.BUTTONS.index(pin)]
 
         if label == 'A':
             self.state.button_a()
@@ -135,14 +128,13 @@ class Inkybot:
             (10,273),
             (10,385)
         ]
-        font_size = 60
+        font_size  = 60
         saturation = 0.7
 
         def __init__(self, parent):
             self.parent = parent
 
         # enter and exit functions can be overridden by the child class
-
         def enter(self):
             pass
         def exit(self):
@@ -169,18 +161,15 @@ class Inkybot:
             draw = ImageDraw.Draw(image)
 
             # text colors use the nearest undithered color to what's in the letterbox
-            color_border = self.parent.least_similar_color(
-                    self.parent.average_outer_perimeter_color(image),
-                    self.parent.palette)
-            color = self.parent.least_similar_color(
-                    color_border,
-                    self.parent.palette)
+            color_border = self.parent.least_similar_color(self.parent.average_outer_perimeter_color(image))
+            color        = self.parent.least_similar_color(color_border)
 
             for i in range(4):
                 txt = self.button_text[i]
                 x,y = self.button_positions[i]
                 text_width, text_height = draw.textsize(txt, font=self.parent.font)
                 dy = int(text_height / 2)
+
                 for xx in range(x - 1, x + 2, 1):
                     for yy in range(y - 1 - dy, y + 2 - dy, 1):
                         draw.text((xx,yy), txt, fill=color_border, font=self.parent.font)
@@ -207,7 +196,7 @@ class Inkybot:
         self.state = self.states[state]
         self.state.enter()
 
-        while self.exiting is not True:
+        while True:
             self.state.loop()
             time.sleep(0.1)
 
@@ -223,22 +212,22 @@ class PictureMode(inkybot.StateClass):
         "",
         "󱧾"
     ]
-    font_size = 60
-    picpath = '/srv/inkybot/pictures'
+    font_size  = 60
+    picpath    = '/srv/inkybot/pictures'
     saturation = 0.7
-    pic_time = 60.0
+    pic_time   = 60.0
 
     def enter(self):
-        self.imagelist = []
-        self.next_img = True
+        self.imagelist   = []
+        self.next_img    = True
         self.time_target = 0.0
-    
+
     def button_b(self):
         self.change_state('hass')
 
     def button_d(self):
         print("changing image...")
-        self.next_img = True
+        self.next_img    = True
         self.time_target = time.time() + self.pic_time
 
     def loop(self):
@@ -249,7 +238,7 @@ class PictureMode(inkybot.StateClass):
         if self.next_img:
             self.next_img = False
             self.time_target = time.time() + self.pic_time
-        
+
             if len(self.imagelist) == 0:
                 self.imagelist = os.listdir(self.picpath)
                 random.shuffle(self.imagelist)
@@ -283,8 +272,6 @@ class HassMode(inkybot.StateClass):
     def enter(self):
         image = Image.new("RGB", self.parent.inky.resolution, (255,0,0))
         self.set_image(image)
-
-
 
 if __name__ == "__main__":
     inkybot.start('picture')
