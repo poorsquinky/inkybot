@@ -3,7 +3,7 @@
 import sys, os, random, time, signal
 import numpy as np
 import RPi.GPIO as GPIO
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageOps, ImagePalette
 from inky.inky_uc8159 import Inky
 
 
@@ -121,12 +121,13 @@ class Inkybot:
             raise Exception("Unhandled button press!")
 
     class StateClass:
-        button_text = [ "?","?","?","?" ]
+        button_text =   [  "?",  "?",  "?",  "?" ]
+        button_colors = [ None, None, None, None ]
         button_positions = [
-            (10,49),
-            (10,161),
-            (10,273),
-            (10,385)
+            (5,49),
+            (5,161),
+            (5,273),
+            (5,385)
         ]
         font_size  = 60
         saturation = 0.7
@@ -165,6 +166,12 @@ class Inkybot:
             color        = self.parent.least_similar_color(color_border)
 
             for i in range(4):
+                if self.button_colors[i] is not None:
+                    c   = self.button_colors[i]
+                    cb  = self.parent.least_similar_color(c)
+                else:
+                    c   = color
+                    cb  = color_border
                 txt = self.button_text[i]
                 x,y = self.button_positions[i]
                 text_width, text_height = draw.textsize(txt, font=self.parent.font)
@@ -172,11 +179,18 @@ class Inkybot:
 
                 for xx in range(x - 1, x + 2, 1):
                     for yy in range(y - 1 - dy, y + 2 - dy, 1):
-                        draw.text((xx,yy), txt, fill=color_border, font=self.parent.font)
+                        draw.text((xx,yy), txt, fill=cb, font=self.parent.font)
 
-                draw.text((x,y - dy), txt, fill=color, font=self.parent.font)
+                draw.text((x,y - dy), txt, fill=c, font=self.parent.font)
 
             self.parent.inky.set_image(image, saturation=self.saturation)
+            self.parent.inky.show()
+
+        def clear(self, color="white"):
+            w,h = self.parent.inky.resolution
+
+            clear_image = Image.new('RGB', (w, h), color)
+            self.parent.inky.set_image(clear_image, saturation=1.0)
             self.parent.inky.show()
 
     def State(self, name):
@@ -248,8 +262,11 @@ class PictureMode(inkybot.StateClass):
 
             image = Image.open(f"{self.picpath}/{fn}") # XXX FIXME: os join function instead
 
+            enhancer = ImageEnhance.Color(image)
+            adjustedimage = enhancer.enhance(1.5)
+
             resizedimage = self.parent.resize_with_letterbox(
-                    image,
+                    adjustedimage,
                     self.parent.inky.resolution,
                     self.parent.average_outer_perimeter_color(image)
                     )
@@ -275,9 +292,17 @@ class HassMode(inkybot.StateClass):
         ""
     ]
 
+    button_colors = [
+        None,
+        (0,0,255),
+        None,
+        (0,255,0)
+    ]
+
     driver_path = "/usr/bin/chromedriver"
     driver=None
     refresh_target = 0.0
+    screen_scale = 1.0
 
     def button_b(self):
         self.change_state('picture')
@@ -285,54 +310,78 @@ class HassMode(inkybot.StateClass):
     def button_d(self):
         self.driver.refresh()
         self.update()
+        self.refresh_target = time.time() + 5
 
     def enter(self):
-        url = "http://localhost:8123/lovelace/1"
+        #self.clear("blue")
+        url = "http://localhost:8123/lovelace/1?kiosk"
+        print(f"launching selenium and loading {url}")
+
         service = Service(self.driver_path)
         options = webdriver.ChromeOptions()
         options.add_argument('--headless')
         self.driver = webdriver.Chrome(service=service, options=options)
+        
+        width,height = [self.screen_scale * x for x in self.parent.inky.resolution]
+        #width -= self.font_size
+        self.driver.set_window_size(width,height)
 
         self.driver.get(url)
+        print("waiting for login button...")
         login_button = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "mwc-button")))
+        #self.driver.execute_script("document.body.style.fontSize = 'larger';") # font scaling
         login_button.click()
 
         self.update()
         self.refresh_target = time.time() + 5
 
     def update(self):
-        print("Updating display...")
-        screenshot_bytes = self.driver.get_screenshot_as_png()
-        screenshot_image = Image.open(BytesIO(screenshot_bytes))
+        if self.driver is not None:
+            print("Updating display...")
+            screenshot_bytes = self.driver.get_screenshot_as_png()
+            screenshot_image = Image.open(BytesIO(screenshot_bytes)).convert('RGB')
+            width, height = screenshot_image.size
+            cropped_image = screenshot_image.crop((5,5, width - 5, height - 5))
 
+            resizedimage = self.parent.resize_with_letterbox(
+                    cropped_image,
+                    self.parent.inky.resolution,
+                    self.parent.average_outer_perimeter_color(screenshot_image)
+            )
 
-        resizedimage = self.parent.resize_with_letterbox(
-                screenshot_image,
-                self.parent.inky.resolution,
-                self.parent.average_outer_perimeter_color(screenshot_image)
-        )
-        enhancer = ImageEnhance.Contrast(resizedimage)
-        adjustedimage = enhancer.enhance(1.2)
+            #enhancer = ImageEnhance.Contrast(resizedimage)
+            enhancer = ImageEnhance.Color(resizedimage)
+            adjustedimage = enhancer.enhance(4.0)
+            enhancer = ImageEnhance.Contrast(adjustedimage)
+            adjustedimage = enhancer.enhance(5.0)
+            #print(resizedimage.mode)
+            #adjustedimage = ImageOps.autocontrast(resizedimage)
 
-        self.set_image(adjustedimage)
+            self.set_image(adjustedimage)
 
-        self.refresh_target = time.time() + 60
+            self.driver.refresh() # reloading the page at every refresh will get us any UI updates in the background
+            self.refresh_target = time.time() + 60
 
     def exit(self):
-        driver.quit()
+        print("Quitting chrome driver...")
+        d = self.driver
+        self.driver = None
+        d.close()
+        d.quit()
 
     def loop(self):
+        if self.driver is not None:
 
-        try:
-            refresh_button = WebDriverWait(self.driver, 0.5).until(
-                    EC.visibility_of_element_located((By.XPATH, '//span[text()="Refresh"]'))
-            )
-            refresh_button.click()
-            self.update()
-        except selenium_TimeoutException:
+            try:
+                refresh_button = WebDriverWait(self.driver, 0.5).until(
+                        EC.visibility_of_element_located((By.XPATH, '//*[text()="Refresh"]'))
+                )
+                refresh_button.click()
+                self.refresh_target = time.time() + 2.5
+            except selenium_TimeoutException:
 
-            if self.refresh_target <= time.time():
-                self.update()
+                if self.refresh_target <= time.time():
+                    self.update()
 
 
 if __name__ == "__main__":
