@@ -59,7 +59,7 @@ class Inkybot:
         # Extract the outer 1-pixel perimeter
         outer_perimeter_pixels = []
         for x in range(width):
-            outer_perimeter_pixels.append(image.getpixel((x, 0)))                    # Top row
+            outer_perimeter_pixels.append(image.getpixel((x, 0)))                   # Top row
             outer_perimeter_pixels.append(image.getpixel((x, height - 1)))          # Bottom row
         for y in range(1, height - 1):
             outer_perimeter_pixels.append(image.getpixel((0, y)))                   # Left column
@@ -161,6 +161,10 @@ class Inkybot:
         def button_d(self):
             print("Button D")
 
+        # same applies to the loop
+        def loop(self):
+            pass
+
         def set_image(self, image):
             draw = ImageDraw.Draw(image)
 
@@ -193,6 +197,7 @@ class Inkybot:
         return decorator
 
     def change_state(self, state):
+        print(f"Changing state to: {state}")
         if self.state:
             self.state.exit()
         self.state = self.states[state]
@@ -227,6 +232,9 @@ class PictureMode(inkybot.StateClass):
         self.imagelist = []
         self.next_img = True
         self.time_target = 0.0
+    
+    def button_b(self):
+        self.change_state('hass')
 
     def button_d(self):
         print("changing image...")
@@ -258,6 +266,24 @@ class PictureMode(inkybot.StateClass):
                     )
 
             self.set_image(resizedimage)
+
+
+@inkybot.State('hass')
+class HassMode(inkybot.StateClass):
+    button_text = [
+        " ",
+        "",
+        " ",
+        " "
+    ]
+
+    def button_b(self):
+        self.change_state('picture')
+
+    def enter(self):
+        image = Image.new("RGB", self.parent.inky.resolution, (255,0,0))
+        self.set_image(image)
+
 
 
 if __name__ == "__main__":
