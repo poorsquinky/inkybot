@@ -22,5 +22,17 @@ Some things that are planned in the near future:
 - More built-in states and examples
   - Status graphs from Home Assistant or other sources
   - Mopidy or other media players
+- Support for more different display types
 
+
+## Requirements
+
+- Python 3 modules:
+  - numpy
+  - pillow
+  - rpi.gpio
+  - selenium
+  - Inky: https://github.com/pimoroni/inky
+
+- chromium-driver for selenium
 

@@ -3,7 +3,7 @@
 import sys, os, random, time, signal
 import numpy as np
 import RPi.GPIO as GPIO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from inky.inky_uc8159 import Inky
 
 
@@ -257,23 +257,86 @@ class PictureMode(inkybot.StateClass):
             self.set_image(resizedimage)
 
 
+
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException as selenium_TimeoutException
+from io import BytesIO
+
 @inkybot.State('hass')
 class HassMode(inkybot.StateClass):
     button_text = [
         " ",
         "",
         " ",
-        " "
+        ""
     ]
+
+    driver_path = "/usr/bin/chromedriver"
+    driver=None
+    refresh_target = 0.0
 
     def button_b(self):
         self.change_state('picture')
 
+    def button_d(self):
+        self.driver.refresh()
+        self.update()
+
     def enter(self):
-        image = Image.new("RGB", self.parent.inky.resolution, (255,0,0))
-        self.set_image(image)
+        url = "http://localhost:8123/lovelace/1"
+        service = Service(self.driver_path)
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        self.driver = webdriver.Chrome(service=service, options=options)
+
+        self.driver.get(url)
+        login_button = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "mwc-button")))
+        login_button.click()
+
+        self.update()
+        self.refresh_target = time.time() + 5
+
+    def update(self):
+        print("Updating display...")
+        screenshot_bytes = self.driver.get_screenshot_as_png()
+        screenshot_image = Image.open(BytesIO(screenshot_bytes))
+
+
+        resizedimage = self.parent.resize_with_letterbox(
+                screenshot_image,
+                self.parent.inky.resolution,
+                self.parent.average_outer_perimeter_color(screenshot_image)
+        )
+        enhancer = ImageEnhance.Contrast(resizedimage)
+        adjustedimage = enhancer.enhance(1.2)
+
+        self.set_image(adjustedimage)
+
+        self.refresh_target = time.time() + 60
+
+    def exit(self):
+        driver.quit()
+
+    def loop(self):
+
+        try:
+            refresh_button = WebDriverWait(self.driver, 0.5).until(
+                    EC.visibility_of_element_located((By.XPATH, '//span[text()="Refresh"]'))
+            )
+            refresh_button.click()
+            self.update()
+        except selenium_TimeoutException:
+
+            if self.refresh_target <= time.time():
+                self.update()
+
 
 if __name__ == "__main__":
-    inkybot.start('picture')
+    #inkybot.start('picture')
+    inkybot.start('hass')
 
 
