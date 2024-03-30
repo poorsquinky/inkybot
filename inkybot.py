@@ -262,14 +262,11 @@ class PictureMode(inkybot.StateClass):
 
             image = Image.open(f"{self.picpath}/{fn}") # XXX FIXME: os join function instead
 
-            enhancer = ImageEnhance.Color(image)
-            adjustedimage = enhancer.enhance(1.5)
-
             resizedimage = self.parent.resize_with_letterbox(
-                    adjustedimage,
+                    image,
                     self.parent.inky.resolution,
                     self.parent.average_outer_perimeter_color(image)
-                    )
+            )
 
             self.set_image(resizedimage)
 
@@ -320,6 +317,11 @@ class HassMode(inkybot.StateClass):
         service = Service(self.driver_path)
         options = webdriver.ChromeOptions()
         options.add_argument('--headless')
+        options.add_argument('--disable-gpu')  # GPU hardware acceleration isn't needed for headless
+        options.add_argument('--no-sandbox')  # Disable the sandbox for all software features
+        options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
+        options.add_argument('--disable-extensions')  # Disabling extensions can save resources
+        options.add_argument('--disable-plugins')  # Disable plugins
         self.driver = webdriver.Chrome(service=service, options=options)
         
         width,height = [self.screen_scale * x for x in self.parent.inky.resolution]
@@ -385,7 +387,7 @@ class HassMode(inkybot.StateClass):
 
 
 if __name__ == "__main__":
-    #inkybot.start('picture')
-    inkybot.start('hass')
+    inkybot.start('picture')
+    #inkybot.start('hass')
 
 
