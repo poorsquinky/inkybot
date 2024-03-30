@@ -222,7 +222,7 @@ inkybot = Inkybot()
 class PictureMode(inkybot.StateClass):
     button_text = [
         "󰸋",
-        "",
+        "󰟐",
         "",
         "󱧾"
     ]
@@ -301,6 +301,8 @@ class HassMode(inkybot.StateClass):
     refresh_target = 0.0
     screen_scale = 1.0
 
+    hass_logo = "img/home-assistant-social-media-logo-square.png"
+
     def button_b(self):
         self.change_state('picture')
 
@@ -310,7 +312,17 @@ class HassMode(inkybot.StateClass):
         self.refresh_target = time.time() + 5
 
     def enter(self):
-        #self.clear("blue")
+        # show the logo so we know the button worked!
+        # XXX refactor this stuff into a letterbox-from-file function somewhere
+        image = Image.open(self.hass_logo)
+        resizedimage = self.parent.resize_with_letterbox(
+                image,
+                self.parent.inky.resolution,
+                self.parent.average_outer_perimeter_color(image)
+        )
+        self.parent.inky.set_image(resizedimage, saturation=self.saturation)
+        self.parent.inky.show()
+
         url = "http://localhost:8123/lovelace/1?kiosk"
         print(f"launching selenium and loading {url}")
 
@@ -322,20 +334,18 @@ class HassMode(inkybot.StateClass):
         options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
         options.add_argument('--disable-extensions')  # Disabling extensions can save resources
         options.add_argument('--disable-plugins')  # Disable plugins
-        self.driver = webdriver.Chrome(service=service, options=options)
+        driver = webdriver.Chrome(service=service, options=options)
         
         width,height = [self.screen_scale * x for x in self.parent.inky.resolution]
-        #width -= self.font_size
-        self.driver.set_window_size(width,height)
+        driver.set_window_size(width,height)
 
-        self.driver.get(url)
+        driver.get(url)
         print("waiting for login button...")
-        login_button = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "mwc-button")))
-        #self.driver.execute_script("document.body.style.fontSize = 'larger';") # font scaling
+        login_button = WebDriverWait(driver, 5).until(EC.visibility_of_element_located((By.CSS_SELECTOR, "mwc-button")))
         login_button.click()
 
-        self.update()
         self.refresh_target = time.time() + 5
+        self.driver = driver
 
     def update(self):
         if self.driver is not None:
